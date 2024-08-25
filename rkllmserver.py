@@ -12,21 +12,21 @@ import tiktoken
 
 app = Flask(__name__)
 
-# Создаем блокировку для контроля многопользовательского доступа к серверу
+#创建一个锁来控制多用户访问服务器
 lock = threading.Lock()
 
-# Создаем глобальную переменную для обозначения текущего состояния блокировки сервера
+#创建全局变量以指定当前服务器锁定状态
 is_blocking = False
 
-# Устанавливаем путь к динамической библиотеке
+#设置动态库路径
 rkllm_lib = ctypes.CDLL('lib/librkllmrt.so')
 
-# Определяем глобальные переменные для сохранения вывода функции обратного вызова
+#定义全局变量以保存回调函数的输出
 global_text = []
 global_state = -1
-split_byte_data = bytes(b"")  # Для сохранения разделенных байтовых данных
+split_byte_data = bytes(b"")  #用于保存分隔的字节数据
 
-# Определяем структуры из динамической библиотеки
+#从动态库定义结构
 class Token(ctypes.Structure):
     _fields_ = [
         ("logprob", ctypes.c_float),
@@ -40,13 +40,13 @@ class RKLLMResult(ctypes.Structure):
         ("num", ctypes.c_int32)
     ]
 
-# Определяем функцию обратного вызова
+#定义回调函数
 def callback(result, userdata, state):
     global global_text, global_state, split_byte_data
     if state == 0:
-        # Сохраняем выходной текст токена и состояние выполнения RKLLM
+        #保存令牌输出文本和RKLLM执行状态
         global_state = state
-        # Проверяем целостность текущих байтовых данных, если неполные - записываем для последующего анализа
+        #检查当前字节数据的完整性，如果不完整-写入后续分析
         try:
             global_text.append((split_byte_data + result.contents.text).decode('utf-8'))
             print((split_byte_data + result.contents.text).decode('utf-8'), end='')
@@ -55,18 +55,18 @@ def callback(result, userdata, state):
             split_byte_data += result.contents.text
         sys.stdout.flush()
     elif state == 1:
-        # Сохраняем состояние выполнения RKLLM
+        #保存RKLLM运行状态
         global_state = state
         print("\n")
         sys.stdout.flush()
     else:
-        print("ошибка выполнения")
+        print("执行错误")
 
-# Связываем функцию обратного вызова Python с C++
+# 将Python回调功能与C++联系起来
 callback_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(RKLLMResult), ctypes.c_void_p, ctypes.c_int)
 c_callback = callback_type(callback)
 
-# Определяем структуру из динамической библиотеки
+#从动态库定义结构
 class RKNNllmParam(ctypes.Structure):
     _fields_ = [
         ("model_path", ctypes.c_char_p),
@@ -87,15 +87,15 @@ class RKNNllmParam(ctypes.Structure):
         ("use_gpu", ctypes.c_bool)
     ]
 
-# Определяем RKLLM_Handle_t и userdata
+# 定义 RKLLM_Handle_t 和 userdata
 RKLLM_Handle_t = ctypes.c_void_p
 userdata = ctypes.c_void_p(None)
 
-# Устанавливаем текст подсказки
+#设置提示文本
 PROMPT_TEXT_PREFIX = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
 PROMPT_TEXT_POSTFIX = "<|im_end|><|im_start|>assistant"
 
-# Определяем класс RKLLM на стороне Python, включающий инициализацию, вывод и освобождение модели RKLLM
+#定义Python侧的RKLLM类，包括RKLLM模型的初始化、输出和释放
 class RKLLM(object):
     def __init__(self, model_path, target_platform):
         rknnllm_param = RKNNllmParam()
@@ -141,7 +141,7 @@ class RKLLM(object):
     def release(self):
         self.rkllm_destroy(self.handle)
 
-# Функция для подсчета токенов
+# tokens 计数功能
 def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> int:
     encoding = tiktoken.get_encoding(encoding_name)
     num_tokens = len(encoding.encode(string))
@@ -276,41 +276,41 @@ def chat_completions():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--target_platform', help='Целевая платформа: например, rk3588/rk3576;')
-    parser.add_argument('--rkllm_model_path', help='Абсолютный путь к конвертированной модели rkllm на Linux-устройстве')
+    parser.add_argument('--target_platform', help='目标平台：例如RK3588/RK3576;')
+    parser.add_argument('--rkllm_model_path', help='Linux设备上转换的rkllm模型的绝对路径')
     args = parser.parse_args()
 
     if not (args.target_platform in ["rk3588", "rk3576"]):
-        print("====== Ошибка: Пожалуйста, укажите правильную целевую платформу: rk3588/rk3576 ======")
+        print("====== 错误：请指定正确的目标平台：RK3588/RK3576 ======")
         sys.stdout.flush()
         exit()
 
     if not os.path.exists(args.rkllm_model_path):
-        print("====== Ошибка: Пожалуйста, укажите точный путь к модели rkllm, учтите, что это должен быть абсолютный путь на устройстве ======")
+        print("====== 错误：请指定RKLLM模型的确切路径，请注意这必须是设备上的绝对路径 ======")
         sys.stdout.flush()
         exit()
 
-    # Настройка фиксированной частоты
+    #设置固定频率
     command = "sudo bash fix_freq_{}.sh".format(args.target_platform)
     subprocess.run(command, shell=True)
 
-    # Установка ограничения на количество файловых дескрипторов
+    #设置文件描述符数限制
     resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
 
-    # Инициализация модели RKLLM
-    print("=========инициализация....===========")
+    #RKLLM模型初始化
+    print("=========初始化…===========")
     sys.stdout.flush()
     target_platform = args.target_platform
     model_path = args.rkllm_model_path
     rkllm_model = RKLLM(model_path, target_platform)
-    print("Инициализация RKLLM успешно завершена!")
+    print("RKLLM初始化成功完成！")
     print("==============================")
     sys.stdout.flush()
 
-    # Запуск приложения Flask
+    #启动Flash应用程序
     app.run(host='0.0.0.0', port=8080, threaded=True, debug=False)
 
     print("====================")
-    print("Вывод модели RKLLM завершен, освобождение ресурсов модели RKLLM...")
+    print("RKLLM模型输出完成，RKLLM模型资源释放…")
     rkllm_model.release()
     print("====================")
